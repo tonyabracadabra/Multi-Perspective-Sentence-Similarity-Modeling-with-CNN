@@ -59,14 +59,14 @@ Two algorithms are used here
 # In the horizontal direction, each equal-sized max/min/mean group is extracted as a vector and 
 # is compared to the corresponding one for the other sentence.
 
-def sentence_algo1(atten_embeds):
+def sentence_algo1(atten_embeds, num_filters_A):
     fea_h = []
     for i, pooling in enumerate([K.max, K.min, K.mean]):
         regM0, regM1 = [], []
         for j, ws in enumerate(wss):
             for k, atten_embed in enumerate(atten_embeds):
                 # Working with building block A, moving the window across the whole length of the word embedding
-                conv = convolution2d(atten_embed, num_filters, kernel_size=[ws, 2*d], stride=[1,1], padding='VALID')
+                conv = building_block_A(atten_embed, ws_0, d, num_filters_A)
                 conv = tf.squeeze(conv, axis=[0,2])
                 if k == 0:
                     regM0.append(pooling(conv, 0))
@@ -84,17 +84,16 @@ def sentence_algo1(atten_embeds):
 
 # Algorithm 2 Vertical Comparison
 
-def sentence_algo2(atten_embeds):
-    fea_a = []
+def sentence_algo2(atten_embeds, num_filters_A, num_filters_B):
+    fea_a, fea_a = [], []
     for i, pooling in enumerate([K.max, K.min, K.mean]):
-        regM0, regM1 = [], []
         atten_embed_0, atten_embed_1 = atten_embeds
 
         # Working with building block A, moving the window across the whole length of the word embedding
         for j_0, ws_0 in enumerate(wss):
-            oG0A = convolution2d(atten_embed_0, num_filters, kernel_size=[ws_0, 2*d], stride=[1,1], padding='VALID')
+            oG0A = building_block_A(atten_embed_0, ws_0, d, num_filters_A)
             for j_1, ws_1 in enumerate(wss):
-                oG1A = convolution2d(atten_embed_1, num_filters, kernel_size=[ws_1, 2*d], stride=[1,1], padding='VALID')
+                oG1A = building_block_A(atten_embed_1, ws_1, d, num_filters_A)
                 fea_a.append(comU1(oG1A, oG2A))
 
         # Working with building block B, the per dimensional CNN
@@ -106,10 +105,10 @@ def sentence_algo2(atten_embeds):
             oG1B = [pooling(conv,0) for conv in oG1B]
 
             for n in xrange(num_filters_B):
-                fea_b.append(comU1(oG0B[:,n], oG0B[:,n]))
+                fea_b.append(comU1(oG0B[n], oG0B[n]))
 
 
-    fea_B = K.expand_dims(K.flatten(fea_B),0)
+    fea_b = K.expand_dims(K.flatten(fea_B),0)
     
     return fea_A
 
