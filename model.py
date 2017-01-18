@@ -85,7 +85,7 @@ reg_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
 
 overal_loss = kl_loss + reg_losses
 
-train_step = tf.train.GradientDescentOptimizer(conf.lr).minimize(overal_loss)
+train_step = tf.train.AdamOptimizer(conf.lr).minimize(overal_loss)
 
 # Initializing the variables
 init = tf.global_variables_initializer()
