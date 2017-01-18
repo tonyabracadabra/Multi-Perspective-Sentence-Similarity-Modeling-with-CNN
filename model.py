@@ -1,3 +1,8 @@
+__author__ = "Xupeng Tong"
+__copyright__ = "Copyright 2017, Text similarity Mesurement with Multi-Perspective CNN"
+__email__ = "xtong@andrew.cmu.edu"
+
+
 import numpy as np
 import tensorflow as tf
 from keras import backend as K
@@ -9,20 +14,33 @@ from tensorflow.contrib.distributions import kl, Multinomial
 from tensorflow.contrib.layers import convolution2d, fully_connected
 
 # Import all the layers from utils file
+from layers import *
 from utils import *
 
-# Dimension of the original word embedding
-d = 10
-# The max rating of the dataset, defines the length of the sparse target distribution vector
-max_rating = 5
+tf.app.flags.DEFINE_integer('d', 100, 'The dimension of the word embedding')
+tf.app.flags.DEFINE_string('max_rating', 5, 'The max rating of the dataset')
+tf.app.flags.DEFINE_integer('num_filters_A', 200, 'The number of filters in block A')
+tf.app.flags.DEFINE_integer('num_filters_B', 20, 'The number of filters in block B')
+tf.app.flags.DEFINE_string('gpu_fraction', '1/2', 'define the gpu fraction used')
+tf.app.flags.DEFINE_integer('n_hidden', 150, 'number of hidden units in the fully connected layer')
+tf.app.flags.DEFINE_string('optim_type', 'adam', 'optimizer')
+tf.app.flags.DEFINE_integer('epochs', 10, 'Number of epochs to be trained')
 
+# adam optimizer
+tf.app.flags.DEFINE_float('lr', 1e-2, 'learning rate')
+tf.app.flags.DEFINE_float('lambda', 1e-4, 'regularization parameter')
+
+conf = flags.FLAGS
+
+"""
+Configure all placeholders to be fed
+"""
 # Defines the placeholder for the sentence pair
 # Sentences are represented as word embeddings, one of the Glove, Paragram-Phrase, Word2Vec etc
-sent_0 = tf.placeholder(shape=(None,d), dtype='float64', name='sent_input_0')
-sent_1 = tf.placeholder(shape=(None,d), dtype='float64', name='sent_input_1')
-
+sent_0 = tf.placeholder(shape=(None, conf.d), dtype='float64', name='sent_input_0')
+sent_1 = tf.placeholder(shape=(None, conf.d), dtype='float64', name='sent_input_1')
 # True Distribution vector, together with p, KL divergence can be calculated and used as loss to be minimized
-p_ = tf.placeholder(shape=(1, max_rating), dtype='float64', name='target_distribution')
+p_ = tf.placeholder(shape=(1, conf.max_rating), dtype='float64', name='target_distribution')
 
 sentences = [sent_0, sent_1]
 
@@ -41,7 +59,13 @@ Multi-Perspective Sentence Model + Structured Similarity Measurement Layer
 (Two algorithms are implemented and either one could be used for sentence modelling)
 """
 
-fea_A = sentence_algo1(atten_embeds)
+setence_model = SentenceModeling(conf, atten_embeds)
+
+fea_h = setence_model.horizontal_comparison()
+
+# or alternatively,
+
+fea_v = setence_model.vertical_comparison()
 
 """
 Step 4
@@ -49,20 +73,37 @@ Step 4
 Output: Similarity Score
 """
 
-n_hidden = 150
-p = fully_connected(fully_connected(fea_A, n_hidden, activation_fn=tf.nn.tanh), 5, activation_fn=tf.nn.log_softmax)
-# p_ = sparse_target_distribution(y)
+ss = SimilarityScore(fea_h, conf)
+p = ss.generate_p()
 
-cross_entropy = -tf.reduce_sum(p_ * tf.log(p))
-entropy = -tf.reduce_sum(p_ * tf.log(p_ + 0.00001))
-kl_divergence = cross_entropy - entropy
+# Difine the loss as kl divergence, more losses will be supported
+loss = kl_divergence(p_, p)
 
-train_step = tf.train.GradientDescentOptimizer(0.5).minimize(kl_divergence)
+train_step = tf.train.GradientDescentOptimizer(0.5).minimize(loss)
+
+
+# Initializing the variables
+init = tf.global_variables_initializer()
 
 with tf.Session as sess:
+	sess.run(init)
+
+	for epoch in range(conf.epochs):
+        avg_cost = 0.
+        total_batch = int(mnist.train.num_examples/batch_size)
+        # Loop over all batches
+        for i in sentence_pairs:
+            sent_0_val, sent_1_val, y = sentence_pairs
+            p_val = sparse_target_distribution(y)
+            # Run optimization op (backprop) and cost op (to get loss value)
+            _, c = sess.run([train_step, loss], feed_dict={sent_0: sent_0_val, 
+            									sent_1: sent_1_val, p_: p_val})
+            # Compute average loss
+            avg_cost += c / len(sentence_pairs)
+        # Display logs per epoch step
+        if (epoch+1) % display_step == 0:
+            print("Epoch:", '%04d' % (epoch+1), "cost=", "{:.9f}".format(avg_cost))
+
+    print("Optimization Finished!")
+
 	sess.run(train_step)
-
-
-
-
-
