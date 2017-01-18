@@ -65,7 +65,7 @@ def sentence_algo1(atten_embeds):
         regM0, regM1 = [], []
         for j, ws in enumerate(wss):
             for k, atten_embed in enumerate(atten_embeds):
-                # Building block A, moving the window across the whole length of the word embedding
+                # Working with building block A, moving the window across the whole length of the word embedding
                 conv = convolution2d(atten_embed, num_filters, kernel_size=[ws, 2*d], stride=[1,1], padding='VALID')
                 conv = tf.squeeze(conv, axis=[0,2])
                 if k == 0:
@@ -89,26 +89,58 @@ def sentence_algo2(atten_embeds):
     for i, pooling in enumerate([K.max, K.min, K.mean]):
         regM0, regM1 = [], []
         atten_embed_0, atten_embed_1 = atten_embeds
-        # Building block A, moving the window across the whole length of the word embedding
+
+        # Working with building block A, moving the window across the whole length of the word embedding
         for j_0, ws_0 in enumerate(wss):
             oG0A = convolution2d(atten_embed_0, num_filters, kernel_size=[ws_0, 2*d], stride=[1,1], padding='VALID')
             for j_1, ws_1 in enumerate(wss):
                 oG1A = convolution2d(atten_embed_1, num_filters, kernel_size=[ws_1, 2*d], stride=[1,1], padding='VALID')
                 fea_a.append(comU1(oG1A, oG2A))
 
+        # Working with building block B, the per dimensional CNN
         for b, ws in enumerate(wss):
-            oG0B = convolution2d(atten_embed_0, num_filters, kernel_size=[1, ws], stride=[1,1], padding='VALID')
-            oG1B = convolution2d(atten_embed_1, num_filters, kernel_size=[1, ws], stride=[1,1], padding='VALID')
+            oG0B = building_block_B(atten_embed_0, ws, num_filters_B)
+            oG0B = [pooling(conv,0) for conv in oG0B]
+
+            oG1B = building_block_B(atten_embed_1, ws, num_filters_B)
+            oG1B = [pooling(conv,0) for conv in oG1B]
 
             for n in xrange(num_filters_B):
                 fea_b.append(comU1(oG0B[:,n], oG0B[:,n]))
-
-        regM0, regM1 = tf.pack(regM0), tf.pack(regM1)
 
 
     fea_B = K.expand_dims(K.flatten(fea_B),0)
     
     return fea_A
+
+"""
+Function that given a input (4 dimensional tensor), returns the hollistic CNN of building block A
+
+"""
+def building_block_A(input, ws, d, num_filters):
+    conv = convolution2d(input, num_filters, kernel_size=[ws, 2*d], stride=[1,1], padding='VALID')
+    return conv
+
+"""
+Function that given a input (4 dimensional tensor), returns the row-wise components of building block B
+Note that the CNN at each dimension does not share parameters, thus after pooling, the return size == dimension,
+where we can start from comparing the generated vectors in the depth of num_filter_B
+
+"""
+def building_block_B(input, ws, num_filters):
+    # Dimension where we want to iteration through with multiple 1D CNN
+    dimension = input.get_shape()[2].value
+
+    # Stores the 1d conv output
+    convs = []
+    # Per dimension iteration
+    for d in xrange(dimension):
+        conv = convolution2d(tf.expand_dims(input[:,:,d,:],1), num_filters, kernel_size=[1,ws], stride=[1,1], padding='VALID')
+        # Removing the dimension with 1
+        conv = tf.squeeze(conv, axis=[0,1])
+        convs.append(conv)
+
+    return convs
 
 
 """
