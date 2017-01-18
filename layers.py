@@ -20,41 +20,34 @@ He, Hua, et al.
 Textual Similarity Measurement."
 
 """
-def input_layer(sentences):
-    # Dimensions of two sentence embeddings are supposed to be same
-    ds = [sentence.get_shape()[1].value for sentence in sentences]
-    assert ds[0] == ds[1]
-    
-    # norm2 by row
-    norm2 = lambda X : K.expand_dims(K.sqrt(K.sum(X ** 2, 1)))
-    # Cosine distance by its best definition
-    cosine = lambda X, Y : K.dot(X, K.transpose(Y))/norm2(X)/K.transpose(norm2(Y))
 
-    # Cosine similarity matrix
-    D = cosine(sentences[0], sentences[1])
-    
-    # Attention weight vectors for sentence 0 and 1
-    As = [K.softmax(K.expand_dims(K.sum(D,i),1)) for i in [1,0]]
-    
-    # Concatenating the original sentence embedding to the cosine similarity, 
-    # force the dimension to be expanded from d to 2*d
-    atten_embeds = []
-    for i in xrange(2):
-        atten_embed = tf.concat(1, [sentences[i], As[i] * sentences[i]])
-        atten_embed = K.expand_dims(atten_embed, 0)
-        atten_embed = K.expand_dims(atten_embed, 3)
-        atten_embeds.append(atten_embed)
+class AttentionInputLayer:
+    def __init__(self, sentences):
+        # Dimensions of two sentence embeddings are supposed to be same
+        ds = [sentence.get_shape()[1].value for sentence in sentences]
+        assert ds[0] == ds[1]
+        
+        # norm2 by row
+        norm2 = lambda X : K.expand_dims(K.sqrt(K.sum(X ** 2, 1)))
+        # Cosine distance by its best definition
+        cosine = lambda X, Y : K.dot(X, K.transpose(Y))/norm2(X)/K.transpose(norm2(Y))
 
-    return atten_embeds
+        # Cosine similarity matrix
+        D = cosine(sentences[0], sentences[1])
+        
+        # Attention weight vectors for sentence 0 and 1
+        As = [K.softmax(K.expand_dims(K.sum(D,i),1)) for i in [1,0]]
+        
+        # Concatenating the original sentence embedding to the cosine similarity, 
+        # force the dimension to be expanded from d to 2*d
+        atten_embeds = []
+        for i in xrange(2):
+            atten_embed = tf.concat(1, [sentences[i], As[i] * sentences[i]])
+            atten_embed = K.expand_dims(atten_embed, 0)
+            atten_embed = K.expand_dims(atten_embed, 3)
+            atten_embeds.append(atten_embed)
 
-
-
-wss = [1,2,3]
-
-# Let the number of filters be 
-num_filters = 2*2*d
-
-
+        self.atten_embeds = atten_embeds
 
 """
 Multi-Perspective Sentence Model
@@ -67,12 +60,14 @@ Two algorithms are used here
 # In the horizontal direction, each equal-sized max/min/mean group is extracted as a vector and 
 # is compared to the corresponding one for the other sentence.
 
-class SentenceModeling():
-    def __init__(conf, atten_embeds):
+class SentenceModelingLayer:
+
+    def __init__(self, conf, atten_embeds, wss):
         self.conf = conf
         self.atten_embeds = atten_embeds
         self.regularizer = l2_regularizer(conf.lambda)
         self.fea_h, fea_v = None, None
+        self.wss = wss
 
     # Algorithm 1 Horizontal Comparison
     def horizontal_comparison(self):
@@ -83,10 +78,10 @@ class SentenceModeling():
         with tf.variable_scope("algo_1"):
             for i, pooling in enumerate([K.max, K.min, K.mean]):
                 regM0, regM1 = [], []
-                for j, ws in enumerate(wss):
+                for j, ws in enumerate(self.wss):
                     for k, atten_embed in enumerate(atten_embeds):
                         # Working with building block A, moving the window across the whole length of the word embedding
-                        conv = __building_block_A(atten_embed, ws_0)
+                        conv = self.__building_block_A(atten_embed, ws_0)
                         conv = tf.squeeze(conv, axis=[0,2])
                         if k == 0:
                             regM0.append(pooling(conv, 0))
@@ -115,18 +110,18 @@ class SentenceModeling():
                 atten_embed_0, atten_embed_1 = self.atten_embeds
 
                 # Working with building block A, moving the window across the whole length of the word embedding
-                for j_0, ws_0 in enumerate(wss):
-                    oG0A = __building_block_A(atten_embed_0, ws_0, d)
+                for j_0, ws_0 in enumerate(self.wss):
+                    oG0A = self.__building_block_A(atten_embed_0, ws_0, d)
                     for j_1, ws_1 in enumerate(wss):
-                        oG1A = __building_block_A(atten_embed_1, ws_1, d)
+                        oG1A = self.__building_block_A(atten_embed_1, ws_1, d)
                         fea_a.append(comU1(oG0A, oG1A))
 
                 # Working with building block B, the per dimensional CNN
-                for b, ws in enumerate(wss):
-                    oG0B = __building_block_B(atten_embed_0, ws)
+                for b, ws in enumerate(self.wss[:-1]):
+                    oG0B = self.__building_block_B(atten_embed_0, ws)
                     oG0B = tf.pack([pooling(conv,0) for conv in oG0B])
 
-                    oG1B = __building_block_B(atten_embed_1, ws)
+                    oG1B = self.__building_block_B(atten_embed_1, ws)
                     oG1B = tf.pack([pooling(conv,0) for conv in oG1B])
                     
                     for n in xrange(num_filters_B):
@@ -144,7 +139,7 @@ class SentenceModeling():
     Function that given a input (4 dimensional tensor), returns the hollistic CNN of building block A
 
     """
-    def __building_block_A(input, ws):
+    def __building_block_A(self, input, ws):
         with tf.variable_scope("building_block_A"):
             conv = convolution2d(input, self.conf.num_filters_A, kernel_size=[ws, 2*self.conf.d], stride=[1,1], padding='VALID', \
                                     weights_regularizer=self.regularizer, biases_regularizer=self.regularizer)
@@ -156,7 +151,7 @@ class SentenceModeling():
     where we can start from comparing the generated vectors in the depth of num_filter_B
 
     """
-    def __building_block_B(input, ws):
+    def __building_block_B(self, input, ws):
         # Dimension where we want to iteration through with multiple 1D CNN
         dimension = input.get_shape()[2].value
 
@@ -174,12 +169,13 @@ class SentenceModeling():
         return convs
 
 """
-Given the feature extracted by the sentence modelling by either of the two algorithms,
+Given the feature extracted by the sentence modeling by either of the two algorithms,
 pass it to the fully connected layer to generate the predicted distribution p
 
 """
 
-class SimilarityScore():
+class SimilarityScoreLayer:
+
     def __init__(self, input, conf):
         self.conf = conf
         self.output = None
@@ -196,5 +192,3 @@ class SimilarityScore():
         self.output = output
 
     return output
-
-

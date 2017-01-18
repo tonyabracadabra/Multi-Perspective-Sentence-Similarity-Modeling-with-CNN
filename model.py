@@ -2,7 +2,7 @@ __author__ = "Xupeng Tong"
 __copyright__ = "Copyright 2017, Text similarity Mesurement with Multi-Perspective CNN"
 __email__ = "xtong@andrew.cmu.edu"
 
-
+import sys
 import numpy as np
 import tensorflow as tf
 from keras import backend as K
@@ -31,6 +31,7 @@ tf.app.flags.DEFINE_float('lr', 1e-2, 'learning rate')
 tf.app.flags.DEFINE_float('lambda', 1e-4, 'regularization parameter')
 
 conf = tf.app.flags.FLAGS
+wss = [1, 2, 3, sys.maxint]
 
 """
 Configure all placeholders to be fed
@@ -49,7 +50,7 @@ Step 1
 
 Attention-Based Input Interaction Layer
 """
-atten_embeds = input_layer(sentences)
+atten_embeds = AttentionInputLayer(sentences).atten_embeds
 
 """
 Step 2 + 3
@@ -59,7 +60,7 @@ Multi-Perspective Sentence Model + Structured Similarity Measurement Layer
 (Two algorithms are implemented and either one could be used for sentence modelling)
 """
 
-setence_model = SentenceModeling(conf, atten_embeds)
+setence_model = SentenceModelingLayer(conf, atten_embeds, wss)
 
 fea_h = setence_model.horizontal_comparison()
 
@@ -73,16 +74,18 @@ Step 4
 Output: Similarity Score
 """
 
-ss = SimilarityScore(fea_h, conf)
+ss = SimilarityScoreLayer(fea_h, conf)
 p = ss.generate_p()
 
 # Difine the loss as kl divergence, more losses will be supported
-loss = kl_divergence(p_, p)
+kl_loss = kl_divergence(p_, p)
 
-tf.get_default_graph().get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="algo_1")
+# Define regularization over all convolutional/fully connected layers
+reg_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
 
-train_step = tf.train.GradientDescentOptimizer(0.5).minimize(loss)
+overal_loss = kl_loss + reg_losses
 
+train_step = tf.train.GradientDescentOptimizer(conf.lr).minimize(overal_loss)
 
 # Initializing the variables
 init = tf.global_variables_initializer()
@@ -96,9 +99,10 @@ with tf.Session as sess:
         # Loop over all batches
         for i in sentence_pairs:
             sent_0_val, sent_1_val, y = sentence_pairs
+            # Convert the target into distribution
             p_val = sparse_target_distribution(y)
             # Run optimization op (backprop) and cost op (to get loss value)
-            _, c = sess.run([train_step, loss], feed_dict={sent_0: sent_0_val, 
+            _, c = sess.run([train_step, overal_loss], feed_dict={sent_0: sent_0_val, 
             									sent_1: sent_1_val, p_: p_val})
             # Compute average loss
             avg_cost += c / len(sentence_pairs)
