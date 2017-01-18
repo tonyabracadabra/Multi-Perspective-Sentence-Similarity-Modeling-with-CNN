@@ -30,7 +30,7 @@ tf.app.flags.DEFINE_integer('epochs', 10, 'Number of epochs to be trained')
 tf.app.flags.DEFINE_float('lr', 1e-2, 'learning rate')
 tf.app.flags.DEFINE_float('lambda', 1e-4, 'regularization parameter')
 
-conf = flags.FLAGS
+conf = tf.app.flags.FLAGS
 
 """
 Configure all placeholders to be fed
@@ -78,6 +78,8 @@ p = ss.generate_p()
 
 # Difine the loss as kl divergence, more losses will be supported
 loss = kl_divergence(p_, p)
+
+tf.get_default_graph().get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope="algo_1")
 
 train_step = tf.train.GradientDescentOptimizer(0.5).minimize(loss)
 

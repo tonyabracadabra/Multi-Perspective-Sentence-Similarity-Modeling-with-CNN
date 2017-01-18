@@ -6,7 +6,7 @@ __email__ = "xtong@andrew.cmu.edu"
 from utils import *
 import tensorflow as tf
 from keras import backend as K
-from tensorflow.contrib.layers import convolution2d, fully_connected
+from tensorflow.contrib.layers import convolution2d, fully_connected, l2_regularizer
 
 """
 
@@ -71,6 +71,7 @@ class SentenceModeling():
     def __init__(conf, atten_embeds):
         self.conf = conf
         self.atten_embeds = atten_embeds
+        self.regularizer = l2_regularizer(conf.lambda)
         self.fea_h, fea_v = None, None
 
     # Algorithm 1 Horizontal Comparison
@@ -85,7 +86,7 @@ class SentenceModeling():
                 for j, ws in enumerate(wss):
                     for k, atten_embed in enumerate(atten_embeds):
                         # Working with building block A, moving the window across the whole length of the word embedding
-                        conv = building_block_A(atten_embed, ws_0, d, num_filters_A)
+                        conv = __building_block_A(atten_embed, ws_0)
                         conv = tf.squeeze(conv, axis=[0,2])
                         if k == 0:
                             regM0.append(pooling(conv, 0))
@@ -115,17 +116,17 @@ class SentenceModeling():
 
                 # Working with building block A, moving the window across the whole length of the word embedding
                 for j_0, ws_0 in enumerate(wss):
-                    oG0A = building_block_A(atten_embed_0, ws_0, d, self.conf.num_filters_A)
+                    oG0A = __building_block_A(atten_embed_0, ws_0, d)
                     for j_1, ws_1 in enumerate(wss):
-                        oG1A = building_block_A(atten_embed_1, ws_1, d, self.conf.num_filters_A)
+                        oG1A = __building_block_A(atten_embed_1, ws_1, d)
                         fea_a.append(comU1(oG0A, oG1A))
 
                 # Working with building block B, the per dimensional CNN
                 for b, ws in enumerate(wss):
-                    oG0B = building_block_B(atten_embed_0, ws, self.conf.num_filters_B)
+                    oG0B = __building_block_B(atten_embed_0, ws)
                     oG0B = tf.pack([pooling(conv,0) for conv in oG0B])
 
-                    oG1B = building_block_B(atten_embed_1, ws, self.conf.num_filters_B)
+                    oG1B = __building_block_B(atten_embed_1, ws)
                     oG1B = tf.pack([pooling(conv,0) for conv in oG1B])
                     
                     for n in xrange(num_filters_B):
@@ -139,36 +140,38 @@ class SentenceModeling():
         return fea_v
 
     
-"""
-Function that given a input (4 dimensional tensor), returns the hollistic CNN of building block A
+    """
+    Function that given a input (4 dimensional tensor), returns the hollistic CNN of building block A
 
-"""
-def building_block_A(input, ws, d, num_filters):
-    with tf.variable_scope("building_block_A"):
-        conv = convolution2d(input, num_filters, kernel_size=[ws, 2*d], stride=[1,1], padding='VALID')
-    return conv
+    """
+    def __building_block_A(input, ws):
+        with tf.variable_scope("building_block_A"):
+            conv = convolution2d(input, self.conf.num_filters_A, kernel_size=[ws, 2*self.conf.d], stride=[1,1], padding='VALID', \
+                                    weights_regularizer=self.regularizer, biases_regularizer=self.regularizer)
+        return conv
 
-"""
-Function that given a input (4 dimensional tensor), returns the row-wise components of building block B
-Note that the CNN at each dimension does not share parameters, thus after pooling, the return size == dimension,
-where we can start from comparing the generated vectors in the depth of num_filter_B
+    """
+    Function that given a input (4 dimensional tensor), returns the row-wise components of building block B
+    Note that the CNN at each dimension does not share parameters, thus after pooling, the return size == dimension,
+    where we can start from comparing the generated vectors in the depth of num_filter_B
 
-"""
-def building_block_B(input, ws, num_filters):
-    # Dimension where we want to iteration through with multiple 1D CNN
-    dimension = input.get_shape()[2].value
+    """
+    def __building_block_B(input, ws):
+        # Dimension where we want to iteration through with multiple 1D CNN
+        dimension = input.get_shape()[2].value
 
-    # Stores the 1d conv output
-    convs = []
-    # Per dimension iteration
-    with tf.variable_scope("building_block_B"):
-        for d in xrange(dimension):
-            conv = convolution2d(tf.expand_dims(input[:,:,d,:],1), num_filters, kernel_size=[1,ws], stride=[1,1], padding='VALID')
-            # Removing the dimension with 1
-            conv = tf.squeeze(conv, axis=[0,1])
-            convs.append(conv)
+        # Stores the 1d conv output
+        convs = []
+        # Per dimension iteration
+        with tf.variable_scope("building_block_B"):
+            for d in xrange(dimension):
+                conv = convolution2d(tf.expand_dims(input[:,:,d,:],1), self.conf.num_filters_B, kernel_size=[1,ws], stride=[1,1], \
+                    padding='VALID', weights_regularizer=self.regularizer, biases_regularizer=self.regularizer)
+                # Removing the dimension with 1
+                conv = tf.squeeze(conv, axis=[0,1])
+                convs.append(conv)
 
-    return convs
+        return convs
 
 """
 Given the feature extracted by the sentence modelling by either of the two algorithms,
@@ -185,8 +188,10 @@ class SimilarityScore():
         if self.output is not None:
             return self.output
 
-        linear_layer = fully_connected(input, self.conf.n_hidden, activation_fn=K.tanh)
-        output = fully_connected(linear_layer, 5, activation_fn=tf.nn.log_softmax)
+        linear_layer = fully_connected(input, self.conf.n_hidden, activation_fn=K.tanh, \
+                        weights_regularizer=l2_regularizer, biases_regularizer=l2_regularizer)
+        output = fully_connected(linear_layer, 5, activation_fn=tf.nn.log_softmax, \
+                        weights_regularizer=l2_regularizer, biases_regularizer=l2_regularizer)
 
         self.output = output
 
