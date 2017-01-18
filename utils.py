@@ -85,7 +85,7 @@ def sentence_algo1(atten_embeds, num_filters_A):
 # Algorithm 2 Vertical Comparison
 
 def sentence_algo2(atten_embeds, num_filters_A, num_filters_B):
-    fea_a, fea_a = [], []
+    fea_a, fea_b = [], []
     for i, pooling in enumerate([K.max, K.min, K.mean]):
         atten_embed_0, atten_embed_1 = atten_embeds
 
@@ -107,10 +107,10 @@ def sentence_algo2(atten_embeds, num_filters_A, num_filters_B):
             for n in xrange(num_filters_B):
                 fea_b.append(comU1(oG0B[n], oG0B[n]))
 
-
-    fea_b = K.expand_dims(K.flatten(fea_B),0)
+    fea_a = K.expand_dims(K.flatten(fea_a),0)
+    fea_b = K.expand_dims(K.flatten(fea_b),0)
     
-    return fea_A
+    return fea_a, fea_b
 
 """
 Function that given a input (4 dimensional tensor), returns the hollistic CNN of building block A
@@ -156,7 +156,7 @@ differences."
 def comU1(vec0, vec1):
     cos_dist = K.sum(vec0 * vec1)/K.sqrt(K.sum(vec0 ** 2))/K.sqrt(K.sum(vec1 ** 2))
     l2_dist = K.sqrt(K.sum(K.square(vec0 - vec1)))
-    l1_dist = K.abs(vec0 - vec1)
+    l1_dist = K.sum(K.abs(vec0 - vec1))
 
     result = tf.pack([cos_dist, l2_dist, l1_dist])
     
