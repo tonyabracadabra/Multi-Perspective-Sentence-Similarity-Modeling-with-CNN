@@ -94,18 +94,18 @@ def sentence_algo2(atten_embeds, num_filters_A, num_filters_B):
             oG0A = building_block_A(atten_embed_0, ws_0, d, num_filters_A)
             for j_1, ws_1 in enumerate(wss):
                 oG1A = building_block_A(atten_embed_1, ws_1, d, num_filters_A)
-                fea_a.append(comU1(oG1A, oG2A))
+                fea_a.append(comU1(oG0A, oG1A))
 
         # Working with building block B, the per dimensional CNN
         for b, ws in enumerate(wss):
             oG0B = building_block_B(atten_embed_0, ws, num_filters_B)
-            oG0B = [pooling(conv,0) for conv in oG0B]
+            oG0B = tf.pack([pooling(conv,0) for conv in oG0B])
 
             oG1B = building_block_B(atten_embed_1, ws, num_filters_B)
-            oG1B = [pooling(conv,0) for conv in oG1B]
-
+            oG1B = tf.pack([pooling(conv,0) for conv in oG1B])
+            
             for n in xrange(num_filters_B):
-                fea_b.append(comU1(oG0B[n], oG0B[n]))
+                fea_b.append(comU1(oG0B[:,n], oG1B[:,n]))
 
     fea_a = K.expand_dims(K.flatten(fea_a),0)
     fea_b = K.expand_dims(K.flatten(fea_b),0)
