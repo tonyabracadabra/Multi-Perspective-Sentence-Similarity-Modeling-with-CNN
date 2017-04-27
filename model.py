@@ -25,6 +25,9 @@ tf.app.flags.DEFINE_string('gpu_fraction', '1/2', 'define the gpu fraction used'
 tf.app.flags.DEFINE_integer('n_hidden', 150, 'number of hidden units in the fully connected layer')
 tf.app.flags.DEFINE_string('optim_type', 'adam', 'optimizer')
 tf.app.flags.DEFINE_integer('epochs', 10, 'Number of epochs to be trained')
+tf.app.flags.DEFINE_integer('data_path', '.', 'Path for the data')
+tf.app.flags.DEFINE_integer('batch_size', 30, 'Path for the data')
+
 
 # adam optimizer
 tf.app.flags.DEFINE_float('lr', 1e-2, 'learning rate')
@@ -90,15 +93,16 @@ train_step = tf.train.AdamOptimizer(conf.lr).minimize(overal_loss)
 # Initializing the variables
 init = tf.global_variables_initializer()
 
+sentence_pairs = np.load(conf.data_path)
+
 with tf.Session as sess:
 	sess.run(init)
 
 	for epoch in range(conf.epochs):
         avg_cost = 0.
-        total_batch = int(mnist.train.num_examples/batch_size)
         # Loop over all batches
-        for i in sentence_pairs:
-            sent_0_val, sent_1_val, y = sentence_pairs
+        for sentence_pair in sentence_pairs:
+            sent_0_val, sent_1_val, y = sentence_pair
             # Convert the target into distribution
             p_val = sparse_target_distribution(y)
             # Run optimization op (backprop) and cost op (to get loss value)
